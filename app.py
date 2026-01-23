@@ -1,4 +1,13 @@
-import os, re, ast, json, io, zipfile, tempfile
+import json
+from matplotlib.gridspec import GridSpec
+import matplotlib.image as mpimg
+import os
+import re
+import ast
+import json
+import io
+import zipfile
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -12,7 +21,8 @@ import streamlit as st
 from statsbombpy import sb  # StatsBomb Open Data endpoints
 
 # ---------- App config ----------
-st.set_page_config(page_title="StatsBomb Open Data Match Report", layout="wide")
+st.set_page_config(
+    page_title="StatsBomb Open Data Match Report", layout="wide")
 
 # Matplotlib defaults (readable in browser)
 plt.rcParams["figure.dpi"] = 110
@@ -25,15 +35,6 @@ PITCH_W = 80
 
 # ---------- Utilities (ported from notebook) ----------
 # 1) Imports y configuración
-import os, re, ast, json
-from pathlib import Path
-
-import numpy as np
-import pandas as pd
-
-import matplotlib.pyplot as plt
-from mplsoccer import Pitch
-
 
 
 # Ajustes generales de plots
@@ -42,12 +43,12 @@ plt.rcParams["savefig.dpi"] = 200
 plt.rcParams["font.size"] = 11
 
 
-
 def slug(s: str) -> str:
     s = str(s).strip().lower()
     s = re.sub(r"\s+", "_", s)
     s = re.sub(r"[^a-z0-9_]+", "", s)
     return s
+
 
 def ensure_list(v):
     if isinstance(v, (list, tuple)):
@@ -61,21 +62,29 @@ def ensure_list(v):
             return None
     return None
 
+
 def split_xy(df: pd.DataFrame, col: str, xcol: str, ycol: str) -> pd.DataFrame:
     if col not in df.columns:
-        if xcol not in df.columns: df[xcol] = np.nan
-        if ycol not in df.columns: df[ycol] = np.nan
+        if xcol not in df.columns:
+            df[xcol] = np.nan
+        if ycol not in df.columns:
+            df[ycol] = np.nan
         return df
     v = df[col].apply(ensure_list)
-    df[xcol] = v.apply(lambda z: z[0] if isinstance(z, list) and len(z) >= 2 else np.nan)
-    df[ycol] = v.apply(lambda z: z[1] if isinstance(z, list) and len(z) >= 2 else np.nan)
+    df[xcol] = v.apply(lambda z: z[0] if isinstance(
+        z, list) and len(z) >= 2 else np.nan)
+    df[ycol] = v.apply(lambda z: z[1] if isinstance(
+        z, list) and len(z) >= 2 else np.nan)
     return df
+
 
 def detect_team_col(ev: pd.DataFrame) -> str:
     for c in ["team", "team_name"]:
         if c in ev.columns:
             return c
-    raise ValueError("No encuentro columna de equipo (team/team_name) en events.")
+    raise ValueError(
+        "No encuentro columna de equipo (team/team_name) en events.")
+
 
 def detect_player_col(df: pd.DataFrame) -> str:
     for c in ["player", "player_name"]:
@@ -83,11 +92,13 @@ def detect_player_col(df: pd.DataFrame) -> str:
             return c
     raise ValueError("No encuentro columna de jugador (player/player_name).")
 
+
 def detect_xg_col(shots: pd.DataFrame) -> str:
     for c in ["shot_statsbomb_xg", "shot_xg", "statsbomb_xg"]:
         if c in shots.columns:
             return c
     return ""
+
 
 def detect_goal_mask(shots: pd.DataFrame) -> pd.Series:
     for c in ["shot_outcome", "shot_outcome_name"]:
@@ -99,6 +110,7 @@ def detect_goal_mask(shots: pd.DataFrame) -> pd.Series:
         return s.str.contains("goal")
     return pd.Series(False, index=shots.index)
 
+
 def open_play_completed_passes(passes: pd.DataFrame) -> pd.DataFrame:
     df = passes.copy()
     # completados
@@ -108,9 +120,11 @@ def open_play_completed_passes(passes: pd.DataFrame) -> pd.DataFrame:
     for c in ["pass_type", "pass_type_name"]:
         if c in df.columns:
             t = df[c].astype(str).str.lower()
-            df = df[~t.isin(["corner", "free kick", "throw-in", "goal kick", "kick off"])].copy()
+            df = df[~t.isin(["corner", "free kick", "throw-in",
+                            "goal kick", "kick off"])].copy()
             break
     return df
+
 
 def first_half_window(df: pd.DataFrame, max_min: int = 15) -> pd.DataFrame:
     out = df.copy()
@@ -128,13 +142,16 @@ def first_half_window(df: pd.DataFrame, max_min: int = 15) -> pd.DataFrame:
 def get_competitions() -> pd.DataFrame:
     return sb.competitions().copy()
 
+
 @st.cache_data(show_spinner=False)
 def get_matches(competition_id: int, season_id: int) -> pd.DataFrame:
     return sb.matches(competition_id=int(competition_id), season_id=int(season_id)).copy()
 
+
 @st.cache_data(show_spinner=False)
 def get_events(match_id: int) -> pd.DataFrame:
     return sb.events(match_id=int(match_id)).copy()
+
 
 @st.cache_data(show_spinner=False)
 def get_lineups(match_id: int) -> pd.DataFrame:
@@ -171,7 +188,6 @@ def get_lineups(match_id: int) -> pd.DataFrame:
     return pd.DataFrame([{"raw": str(df)}])
 
 
-
 # ---------- Match context + saving ----------
 def match_context(matches_df: pd.DataFrame, match_id: int) -> dict:
     ctx = {"match_id": int(match_id), "home_team": None, "away_team": None,
@@ -201,18 +217,21 @@ def match_context(matches_df: pd.DataFrame, match_id: int) -> dict:
     ctx["season"] = pick(["season_name", "season"])
     return ctx
 
+
 def fmt_ctx(ctx: dict) -> str:
     ht = ctx.get("home_team") or "Home"
     at = ctx.get("away_team") or "Away"
     hs, a_s = ctx.get("home_score"), ctx.get("away_score")
     score = f"{hs}-{a_s}" if (hs is not None and a_s is not None) else ""
-    meta = " | ".join([str(x) for x in [ctx.get("competition"), ctx.get("season"), ctx.get("match_date")] if x not in [None, "nan", "NaT"] and str(x).strip()])
+    meta = " | ".join([str(x) for x in [ctx.get("competition"), ctx.get("season"), ctx.get(
+        "match_date")] if x not in [None, "nan", "NaT"] and str(x).strip()])
     head = f"{ht} vs {at}"
     if score:
         head += f" ({score})"
     if meta:
         head += f" — {meta}"
     return head
+
 
 def match_outdir(ctx: dict) -> Path:
     ht = slug(ctx.get("home_team") or "home")
@@ -221,6 +240,7 @@ def match_outdir(ctx: dict) -> Path:
     d = OUTROOT / f"{ht}_{at}_{mid}"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
 
 def save_df(df: pd.DataFrame, outdir: Path, stem: str, save_csv=True, save_parquet=True):
     """
@@ -265,7 +285,8 @@ def save_df(df: pd.DataFrame, outdir: Path, stem: str, save_csv=True, save_parqu
         for c in df2.columns:
             if df2[c].dtype == "object":
                 # si hay cualquier valor "complejo", serializa toda la columna
-                complex_mask = df2[c].apply(lambda v: isinstance(v, (dict, list, pd.DataFrame, pd.Series)))
+                complex_mask = df2[c].apply(lambda v: isinstance(
+                    v, (dict, list, pd.DataFrame, pd.Series)))
                 if complex_mask.any():
                     df2[c] = df2[c].apply(_safe_json_str)
 
@@ -280,7 +301,6 @@ def save_df(df: pd.DataFrame, outdir: Path, stem: str, save_csv=True, save_parqu
     return out
 
 
-
 # ---------- Plotting (ported from notebook; modified to return fig) ----------
 def prep_events_for_plots(events_df: pd.DataFrame) -> pd.DataFrame:
     ev = events_df.copy()
@@ -288,20 +308,23 @@ def prep_events_for_plots(events_df: pd.DataFrame) -> pd.DataFrame:
     ev = split_xy(ev, "pass_end_location", "pass_end_x", "pass_end_y")
     return ev
 
+
 def mirror_coords(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    for a,b in [("x","y"), ("pass_end_x","pass_end_y")]:
+    for a, b in [("x", "y"), ("pass_end_x", "pass_end_y")]:
         if a in out.columns:
             out[a] = PITCH_L - pd.to_numeric(out[a], errors="coerce")
         if b in out.columns:
             out[b] = PITCH_W - pd.to_numeric(out[b], errors="coerce")
     return out
 
+
 def normalize_attack_right(df: pd.DataFrame, team: str, ctx: dict) -> pd.DataFrame:
     away = str(ctx.get("away_team") or "")
     if away and str(team) == away:
         return mirror_coords(df)
     return df
+
 
 def plot_shot_map(events_xy: pd.DataFrame, ctx: dict, save=False, outdir: Optional[Path] = None):
     """
@@ -320,7 +343,8 @@ def plot_shot_map(events_xy: pd.DataFrame, ctx: dict, save=False, outdir: Option
     if not xg_col:
         shots["xg"] = 0.0
         xg_col = "xg"
-    shots[xg_col] = pd.to_numeric(shots[xg_col], errors="coerce").fillna(0.0).clip(0, 1)
+    shots[xg_col] = pd.to_numeric(
+        shots[xg_col], errors="coerce").fillna(0.0).clip(0, 1)
 
     # contexto
     teams = [ctx.get("home_team"), ctx.get("away_team")]
@@ -384,18 +408,22 @@ def plot_shot_map(events_xy: pd.DataFrame, ctx: dict, save=False, outdir: Option
     ref_xg = [0.05, 0.15, 0.30, 0.50]
     ref_sizes = 35 + (np.array(ref_xg) ** 0.55) * 950
     for xg, ss in zip(ref_xg, ref_sizes):
-        ax.scatter([], [], s=ss, facecolors="none", edgecolors="black", linewidths=1.2, label=f"xG {xg:.2f}")
+        ax.scatter([], [], s=ss, facecolors="none",
+                   edgecolors="black", linewidths=1.2, label=f"xG {xg:.2f}")
     ax.legend(loc="upper right", frameon=True)
 
-    ax.set_title(f"Mapa de tiros (tamaño ~ xG, ★ = gol) — {fmt_ctx(ctx)}", pad=14)
+    ax.set_title(
+        f"Mapa de tiros (tamaño ~ xG, ★ = gol) — {fmt_ctx(ctx)}", pad=14)
 
     # Pie de figura: recordatorio de orientación
-    ax.text(2, 78.5, "Orientación: ambos equipos atacan →", ha="left", va="top", fontsize=9, alpha=0.75)
+    ax.text(2, 78.5, "Orientación: ambos equipos atacan →",
+            ha="left", va="top", fontsize=9, alpha=0.75)
 
     fig.tight_layout()
     if save and outdir is not None:
         (Path(outdir) / "01_shot_map.png").parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(Path(outdir) / "01_shot_map.png", bbox_inches="tight", dpi=180)
+        fig.savefig(Path(outdir) / "01_shot_map.png",
+                    bbox_inches="tight", dpi=180)
     return fig
 
 
@@ -417,11 +445,14 @@ def plot_xg_flow(events_xy: pd.DataFrame, ctx: dict, save=False, outdir: Optiona
         xg_col = "xg"
 
     # tiempo (min + seg) para ordenamiento más fino
-    shots["minute"] = pd.to_numeric(shots.get("minute", 0), errors="coerce").fillna(0).astype(int)
-    shots["second"] = pd.to_numeric(shots.get("second", 0), errors="coerce").fillna(0).astype(int)
+    shots["minute"] = pd.to_numeric(
+        shots.get("minute", 0), errors="coerce").fillna(0).astype(int)
+    shots["second"] = pd.to_numeric(
+        shots.get("second", 0), errors="coerce").fillna(0).astype(int)
     shots["t"] = shots["minute"] + shots["second"] / 60.0
 
-    shots["xg"] = pd.to_numeric(shots[xg_col], errors="coerce").fillna(0.0).clip(0, 1)
+    shots["xg"] = pd.to_numeric(
+        shots[xg_col], errors="coerce").fillna(0.0).clip(0, 1)
 
     teams = [ctx.get("home_team"), ctx.get("away_team")]
     teams = [t for t in teams if t is not None]
@@ -451,7 +482,8 @@ def plot_xg_flow(events_xy: pd.DataFrame, ctx: dict, save=False, outdir: Optiona
         if goals.any():
             sg = s[goals].copy()
             yg = y.loc[sg.index]
-            ax.scatter(sg["t"], yg, marker="*", s=120, edgecolor="black", linewidth=0.7, zorder=5)
+            ax.scatter(sg["t"], yg, marker="*", s=120,
+                       edgecolor="black", linewidth=0.7, zorder=5)
 
     # referencias
     ax.axvline(45, linestyle="--", linewidth=1, alpha=0.35)
@@ -468,11 +500,13 @@ def plot_xg_flow(events_xy: pd.DataFrame, ctx: dict, save=False, outdir: Optiona
     ymax = max(ax.get_ylim()[1], 0.01)
     ax.text(45, ymax*0.98, "HT", ha="right", va="top", fontsize=9, alpha=0.75)
     ax.text(90, ymax*0.98, "FT", ha="right", va="top", fontsize=9, alpha=0.75)
-    ax.text(0.99, 0.02, "★ = gol", transform=ax.transAxes, ha="right", va="bottom", fontsize=9, alpha=0.75)
+    ax.text(0.99, 0.02, "★ = gol", transform=ax.transAxes,
+            ha="right", va="bottom", fontsize=9, alpha=0.75)
 
     fig.tight_layout()
     if save and outdir is not None:
-        fig.savefig(Path(outdir) / "02_xg_flow.png", bbox_inches="tight", dpi=180)
+        fig.savefig(Path(outdir) / "02_xg_flow.png",
+                    bbox_inches="tight", dpi=180)
     return fig
 
 
@@ -519,31 +553,37 @@ def plot_passing_network(events_xy: pd.DataFrame, team: str, ctx: dict, save=Fal
 
     # Posición media de origen por jugador
     pos = (p.groupby(player_col)
-             .agg(x_mean=("x", "mean"),
-                  y_mean=("y", "mean"),
-                  n=("x", "size"))
-             .reset_index())
+           .agg(x_mean=("x", "mean"),
+                y_mean=("y", "mean"),
+                n=("x", "size"))
+           .reset_index())
 
     # Conexiones jugador→receptor
     links = (p.groupby([player_col, rec_col])
-               .size()
-               .reset_index(name="count"))
+             .size()
+             .reset_index(name="count"))
 
     # Filtrar ruido: conexiones mínimas y jugadores con poco volumen
     links = links[links["count"] >= 2].copy()
     if links.empty:
         return
     keep_players = set(pos[pos["n"] >= 8][player_col])
-    links = links[links[player_col].isin(keep_players) & links[rec_col].isin(keep_players)].copy()
+    links = links[links[player_col].isin(
+        keep_players) & links[rec_col].isin(keep_players)].copy()
     if links.empty:
         return
 
     # Merge posiciones de origen y receptor
-    pos_map = pos.set_index(player_col)[["x_mean", "y_mean", "n"]].to_dict("index")
-    links["sx"] = links[player_col].map(lambda k: pos_map.get(k, {}).get("x_mean"))
-    links["sy"] = links[player_col].map(lambda k: pos_map.get(k, {}).get("y_mean"))
-    links["ex"] = links[rec_col].map(lambda k: pos_map.get(k, {}).get("x_mean"))
-    links["ey"] = links[rec_col].map(lambda k: pos_map.get(k, {}).get("y_mean"))
+    pos_map = pos.set_index(player_col)[
+        ["x_mean", "y_mean", "n"]].to_dict("index")
+    links["sx"] = links[player_col].map(
+        lambda k: pos_map.get(k, {}).get("x_mean"))
+    links["sy"] = links[player_col].map(
+        lambda k: pos_map.get(k, {}).get("y_mean"))
+    links["ex"] = links[rec_col].map(
+        lambda k: pos_map.get(k, {}).get("x_mean"))
+    links["ey"] = links[rec_col].map(
+        lambda k: pos_map.get(k, {}).get("y_mean"))
     links = links.dropna(subset=["sx", "sy", "ex", "ey"]).copy()
 
     pitch = Pitch(pitch_type="statsbomb", line_zorder=2)
@@ -566,7 +606,8 @@ def plot_passing_network(events_xy: pd.DataFrame, team: str, ctx: dict, save=Fal
     # Etiquetas (apellido)
     for _, r in pos.iterrows():
         lab = str(r[player_col]).split()[-1]
-        ax.text(r["x_mean"], r["y_mean"], lab, ha="center", va="center", fontsize=8, zorder=4)
+        ax.text(r["x_mean"], r["y_mean"], lab, ha="center",
+                va="center", fontsize=8, zorder=4)
 
     # Títulos / subtítulos
     ax.set_title(f"Passing network — {team} — {fmt_ctx(ctx)}", pad=14)
@@ -575,7 +616,8 @@ def plot_passing_network(events_xy: pd.DataFrame, team: str, ctx: dict, save=Fal
 
     fig.tight_layout()
     if save and outdir is not None:
-        fig.savefig(Path(outdir) / f"03_passing_network_{slug(team)}.png", bbox_inches="tight", dpi=180)
+        fig.savefig(Path(
+            outdir) / f"03_passing_network_{slug(team)}.png", bbox_inches="tight", dpi=180)
     return fig
 
 
@@ -591,7 +633,8 @@ def plot_progressive_passes(events_xy: pd.DataFrame, team: str, ctx: dict, save=
     if passes.empty:
         return
     passes = open_play_completed_passes(passes)
-    passes = passes.dropna(subset=["x", "y", "pass_end_x", "pass_end_y"]).copy()
+    passes = passes.dropna(
+        subset=["x", "y", "pass_end_x", "pass_end_y"]).copy()
 
     p = passes[passes[team_col] == team].copy()
     if p.empty:
@@ -600,7 +643,8 @@ def plot_progressive_passes(events_xy: pd.DataFrame, team: str, ctx: dict, save=
 
     # Distancia a centro de portería rival (x=120, y=40)
     p["start_d"] = np.sqrt((PITCH_L - p["x"])**2 + (40 - p["y"])**2)
-    p["end_d"] = np.sqrt((PITCH_L - p["pass_end_x"])**2 + (40 - p["pass_end_y"])**2)
+    p["end_d"] = np.sqrt((PITCH_L - p["pass_end_x"]) **
+                         2 + (40 - p["pass_end_y"])**2)
     p["progress"] = p["start_d"] - p["end_d"]
 
     # Umbral de progresión (metros). 10m suele ser buen baseline.
@@ -633,14 +677,16 @@ def plot_progressive_passes(events_xy: pd.DataFrame, team: str, ctx: dict, save=
         )
 
     # Resumen
-    ax.set_title(f"Progressive passes (Open Play, completados) — {team} — {fmt_ctx(ctx)}", pad=14)
+    ax.set_title(
+        f"Progressive passes (Open Play, completados) — {team} — {fmt_ctx(ctx)}", pad=14)
     ax.text(0.01, 0.01,
             f"Mostrando: top {len(prog)} | Umbral: ≥10m | Progreso total: {prog['progress'].sum():.0f}m",
             transform=ax.transAxes, ha="left", va="bottom", fontsize=9, alpha=0.75)
 
     fig.tight_layout()
     if save and outdir is not None:
-        fig.savefig(Path(outdir) / f"04_progressive_passes_{slug(team)}.png", bbox_inches="tight", dpi=180)
+        fig.savefig(Path(
+            outdir) / f"04_progressive_passes_{slug(team)}.png", bbox_inches="tight", dpi=180)
     return fig
 
 
@@ -651,7 +697,8 @@ def plot_pressure_heatmap(events_xy: pd.DataFrame, team: str, ctx: dict, save=Fa
     - Incluye conteo total en subtítulo.
     """
     team_col = detect_team_col(events_xy)
-    press = events_xy[events_xy["type"] == "Pressure"].dropna(subset=["x", "y"]).copy()
+    press = events_xy[events_xy["type"] == "Pressure"].dropna(
+        subset=["x", "y"]).copy()
     press = press[press[team_col] == team].copy()
     if press.empty:
         return
@@ -662,33 +709,34 @@ def plot_pressure_heatmap(events_xy: pd.DataFrame, team: str, ctx: dict, save=Fa
 
     # KDE (si falla por alguna razón, fallback a bins)
     try:
-        kde = pitch.kdeplot(press["x"].to_numpy(), press["y"].to_numpy(), ax=ax, fill=True, levels=60, alpha=0.9, zorder=1)
+        kde = pitch.kdeplot(press["x"].to_numpy(), press["y"].to_numpy(
+        ), ax=ax, fill=True, levels=60, alpha=0.9, zorder=1)
         cbar = plt.colorbar(kde, ax=ax, fraction=0.03, pad=0.02)
         cbar.set_label("Densidad de presiones")
     except Exception:
-        bin_stat = pitch.bin_statistic(press["x"], press["y"], statistic="count", bins=(24, 16))
+        bin_stat = pitch.bin_statistic(
+            press["x"], press["y"], statistic="count", bins=(24, 16))
         hm = pitch.heatmap(bin_stat, ax=ax, alpha=0.85)
         cbar = plt.colorbar(hm, ax=ax, fraction=0.03, pad=0.02)
         cbar.set_label("Conteo de presiones")
 
-    ax.set_title(f"Presiones — mapa de calor — {team} — {fmt_ctx(ctx)}", pad=14)
+    ax.set_title(
+        f"Presiones — mapa de calor — {team} — {fmt_ctx(ctx)}", pad=14)
     ax.text(0.01, 0.01, f"Total presiones: {len(press)} | Orientación: ambos equipos atacan →",
             transform=ax.transAxes, ha="left", va="bottom", fontsize=9, alpha=0.75)
 
     fig.tight_layout()
     if save and outdir is not None:
-        fig.savefig(Path(outdir) / f"05_pressure_heatmap_{slug(team)}.png", bbox_inches="tight", dpi=180)
+        fig.savefig(Path(
+            outdir) / f"05_pressure_heatmap_{slug(team)}.png", bbox_inches="tight", dpi=180)
     return fig
-
 
 
 # ------------------------------------------------------------
 # Match report (presentación): muestra todas las gráficas en una sola vista (grid 4x4)
 # Nota: NO altera la lógica de cálculo de las gráficas; sólo compone una vista a partir de los PNG guardados.
 # ------------------------------------------------------------
-import numpy as np
-import matplotlib.image as mpimg
-from matplotlib.gridspec import GridSpec
+
 
 def _autocrop_white_arr(arr: np.ndarray, tol: int = 8, pad: int = 6) -> np.ndarray:
     """Recorta márgenes casi blancos de una imagen (numpy array)."""
@@ -708,7 +756,8 @@ def _autocrop_white_arr(arr: np.ndarray, tol: int = 8, pad: int = 6) -> np.ndarr
     else:
         rgb_u = rgb
 
-    white = (rgb_u[..., 0] >= 255 - tol) & (rgb_u[..., 1] >= 255 - tol) & (rgb_u[..., 2] >= 255 - tol)
+    white = (rgb_u[..., 0] >= 255 - tol) & (rgb_u[..., 1]
+                                            >= 255 - tol) & (rgb_u[..., 2] >= 255 - tol)
     if alpha is not None:
         if alpha.dtype != np.uint8:
             a_u = np.clip(alpha * 255.0, 0, 255).astype(np.uint8)
@@ -726,8 +775,6 @@ def _autocrop_white_arr(arr: np.ndarray, tol: int = 8, pad: int = 6) -> np.ndarr
     x0 = max(int(xs.min()) - pad, 0)
     x1 = min(int(xs.max()) + pad + 1, arr.shape[1])
     return arr[y0:y1, x0:x1]
-
-
 
 
 # ---------- Streamlit helpers ----------
@@ -748,20 +795,26 @@ def generate_top5_streamlit(
     figs = []
 
     fig1 = plot_shot_map(ev, ctx, save=save_figs, outdir=outdir)
-    if fig1 is not None: figs.append(("Mapa de tiros", fig1))
+    if fig1 is not None:
+        figs.append(("Mapa de tiros", fig1))
 
     fig2 = plot_xg_flow(ev, ctx, save=save_figs, outdir=outdir)
-    if fig2 is not None: figs.append(("xG acumulado", fig2))
+    if fig2 is not None:
+        figs.append(("xG acumulado", fig2))
 
     for t in teams:
         fig3 = plot_passing_network(ev, t, ctx, save=save_figs, outdir=outdir)
-        if fig3 is not None: figs.append((f"Red de pases — {t}", fig3))
+        if fig3 is not None:
+            figs.append((f"Red de pases — {t}", fig3))
 
-        fig4 = plot_progressive_passes(ev, t, ctx, save=save_figs, outdir=outdir)
-        if fig4 is not None: figs.append((f"Pases progresivos — {t}", fig4))
+        fig4 = plot_progressive_passes(
+            ev, t, ctx, save=save_figs, outdir=outdir)
+        if fig4 is not None:
+            figs.append((f"Pases progresivos — {t}", fig4))
 
         fig5 = plot_pressure_heatmap(ev, t, ctx, save=save_figs, outdir=outdir)
-        if fig5 is not None: figs.append((f"Presiones — {t}", fig5))
+        if fig5 is not None:
+            figs.append((f"Presiones — {t}", fig5))
 
     return ctx, teams, figs
 
@@ -787,12 +840,18 @@ def build_match_report_from_saved_pngs(outdir: Path, ctx: dict, teams: list[str]
     files = [
         ("Mapa de tiros",               outdir / "01_shot_map.png"),
         ("xG acumulado",                outdir / "02_xg_flow.png"),
-        (f"Red de pases — {home}",      outdir / f"03_passing_network_{_slug(home)}.png"),
-        (f"Red de pases — {away}",      outdir / f"03_passing_network_{_slug(away)}.png"),
-        (f"Pases progresivos — {home}", outdir / f"04_progressive_passes_{_slug(home)}.png"),
-        (f"Pases progresivos — {away}", outdir / f"04_progressive_passes_{_slug(away)}.png"),
-        (f"Presiones — {home}",         outdir / f"05_pressure_heatmap_{_slug(home)}.png"),
-        (f"Presiones — {away}",         outdir / f"05_pressure_heatmap_{_slug(away)}.png"),
+        (f"Red de pases — {home}",      outdir /
+         f"03_passing_network_{_slug(home)}.png"),
+        (f"Red de pases — {away}",      outdir /
+         f"03_passing_network_{_slug(away)}.png"),
+        (f"Pases progresivos — {home}", outdir /
+         f"04_progressive_passes_{_slug(home)}.png"),
+        (f"Pases progresivos — {away}", outdir /
+         f"04_progressive_passes_{_slug(away)}.png"),
+        (f"Presiones — {home}",         outdir /
+         f"05_pressure_heatmap_{_slug(home)}.png"),
+        (f"Presiones — {away}",         outdir /
+         f"05_pressure_heatmap_{_slug(away)}.png"),
     ]
 
     # load helper
@@ -807,13 +866,14 @@ def build_match_report_from_saved_pngs(outdir: Path, ctx: dict, teams: list[str]
     imgs = [(title, _read(path), path.name) for title, path in files]
 
     fig = plt.figure(figsize=(18, 20), facecolor="white")
-    gs = GridSpec(4, 4, figure=fig, left=0.03, right=0.97, top=0.94, bottom=0.03, wspace=0.06, hspace=0.10)
+    gs = GridSpec(4, 4, figure=fig, left=0.03, right=0.97,
+                  top=0.94, bottom=0.03, wspace=0.06, hspace=0.10)
 
     positions = [
-        (0, slice(0,2)), (0, slice(2,4)),
-        (1, slice(0,2)), (1, slice(2,4)),
-        (2, slice(0,2)), (2, slice(2,4)),
-        (3, slice(0,2)), (3, slice(2,4)),
+        (0, slice(0, 2)), (0, slice(2, 4)),
+        (1, slice(0, 2)), (1, slice(2, 4)),
+        (2, slice(0, 2)), (2, slice(2, 4)),
+        (3, slice(0, 2)), (3, slice(2, 4)),
     ]
 
     missing = []
@@ -823,7 +883,8 @@ def build_match_report_from_saved_pngs(outdir: Path, ctx: dict, teams: list[str]
         ax.set_title(panel_title, fontsize=12, pad=6, fontweight="semibold")
         if img is None:
             missing.append(fname)
-            ax.text(0.5, 0.5, f"No se encontró:\n{fname}", ha="center", va="center", fontsize=11, color="#b00020")
+            ax.text(0.5, 0.5, f"No se encontró:\n{fname}",
+                    ha="center", va="center", fontsize=11, color="#b00020")
         else:
             ax.imshow(img, aspect="auto")
 
@@ -831,18 +892,20 @@ def build_match_report_from_saved_pngs(outdir: Path, ctx: dict, teams: list[str]
     fig.suptitle(title, fontsize=20, fontweight="bold", y=0.985)
 
     subtitle_parts = []
-    for k, lab in [("competition_id","Comp"), ("season_id","Season"), ("match_id","Match")]:
+    for k, lab in [("competition_id", "Comp"), ("season_id", "Season"), ("match_id", "Match")]:
         if ctx.get(k) is not None:
             subtitle_parts.append(f"{lab} {ctx.get(k)}")
     subtitle = " | ".join(subtitle_parts)
     if subtitle:
-        fig.text(0.5, 0.962, subtitle, ha="center", va="top", fontsize=11, color="#444444")
+        fig.text(0.5, 0.962, subtitle, ha="center",
+                 va="top", fontsize=11, color="#444444")
 
     if missing:
         fig.text(0.5, 0.015, "Aviso: faltan archivos en el reporte: " + ", ".join(missing),
                  ha="center", va="bottom", fontsize=9, color="#b00020")
 
-    png_path = outdir / f"match_report_{_slug(home)}_vs_{_slug(away)}_match{ctx.get('match_id','na')}.png"
+    png_path = outdir / \
+        f"match_report_{_slug(home)}_vs_{_slug(away)}_match{ctx.get('match_id', 'na')}.png"
     pdf_path = png_path.with_suffix(".pdf")
 
     fig.savefig(png_path, dpi=200, bbox_inches="tight", facecolor="white")
@@ -864,18 +927,14 @@ def zip_folder(folder: Path) -> bytes:
 
 def main():
     st.title("StatsBomb Open Data — Match Report (Streamlit)")
-    st.markdown(
-        "Configura el partido y las salidas aquí abajo. "
-        "Las opciones y botones están en el área principal (mobile-first)."
-    )
 
     comps = get_competitions()
 
     # Detect typical columns
     cid_col = "competition_id" if "competition_id" in comps.columns else "competition"
     sid_col = "season_id" if "season_id" in comps.columns else "season"
-    cn_col  = "competition_name" if "competition_name" in comps.columns else "competition"
-    sn_col  = "season_name" if "season_name" in comps.columns else "season"
+    cn_col = "competition_name" if "competition_name" in comps.columns else "competition"
+    sn_col = "season_name" if "season_name" in comps.columns else "season"
 
     comps_view = comps.copy()
     if cn_col in comps_view.columns and sn_col in comps_view.columns:
@@ -886,7 +945,8 @@ def main():
         sn = str(r.get(sn_col, "")).strip()
         return f"{cn} | {sn} (cid={int(r[cid_col])}, sid={int(r[sid_col])})"
 
-    comp_options = [(comp_label(r), (int(r[cid_col]), int(r[sid_col]))) for _, r in comps_view.iterrows()]
+    comp_options = [(comp_label(r), (int(r[cid_col]), int(r[sid_col])))
+                    for _, r in comps_view.iterrows()]
 
     st.markdown("### 1) Selecciona competición")
     with st.form("step1_competition", clear_on_submit=False):
@@ -924,22 +984,25 @@ def main():
         return None
 
     def match_label(r):
-        ht = pick(["home_team_name","home_team"], r) or "Home"
-        at = pick(["away_team_name","away_team"], r) or "Away"
+        ht = pick(["home_team_name", "home_team"], r) or "Home"
+        at = pick(["away_team_name", "away_team"], r) or "Away"
         hs = pick(["home_score"], r)
         a_s = pick(["away_score"], r)
-        date = pick(["match_date","date","kick_off"], r)
-        score = f" ({hs}-{a_s})" if (hs is not None and a_s is not None and str(hs)!="nan" and str(a_s)!="nan") else ""
-        meta = f" — {date}" if (date is not None and str(date)!="nan") else ""
+        date = pick(["match_date", "date", "kick_off"], r)
+        score = f" ({hs}-{a_s})" if (hs is not None and a_s is not None and str(hs)
+                                     != "nan" and str(a_s) != "nan") else ""
+        meta = f" — {date}" if (
+            date is not None and str(date) != "nan") else ""
         return f"{ht} vs {at}{score}{meta} | match_id={int(r[mid_col])}"
 
     matches_view = matches.copy()
-    for dc in ["match_date","date","kick_off"]:
+    for dc in ["match_date", "date", "kick_off"]:
         if dc in matches_view.columns:
             matches_view = matches_view.sort_values(dc)
             break
 
-    match_options = [(match_label(r), int(r[mid_col])) for _, r in matches_view.iterrows()]
+    match_options = [(match_label(r), int(r[mid_col]))
+                     for _, r in matches_view.iterrows()]
 
     st.markdown("### 2) Selecciona partido y opciones")
     with st.form("step2_match_and_options", clear_on_submit=False):
@@ -956,9 +1019,11 @@ def main():
         with o1:
             save_csv = st.checkbox("Guardar CSV", value=True, key="save_csv")
         with o2:
-            save_parquet = st.checkbox("Guardar Parquet", value=True, key="save_parquet")
+            save_parquet = st.checkbox(
+                "Guardar Parquet", value=True, key="save_parquet")
         with o3:
-            save_figs = st.checkbox("Guardar gráficas PNG", value=True, key="save_figs")
+            save_figs = st.checkbox(
+                "Guardar gráficas PNG", value=True, key="save_figs")
         with o4:
             build_report = st.checkbox(
                 "Crear Match Report (PNG+PDF)",
@@ -967,7 +1032,8 @@ def main():
                 key="build_report",
             )
 
-        run = st.form_submit_button("Generar", type="primary", use_container_width=True)
+        run = st.form_submit_button(
+            "Generar", type="primary", use_container_width=True)
 
     # Only persist match_id when user submits the form (Generar)
     if run:
@@ -986,23 +1052,29 @@ def main():
 
         # Output folder (per-run)
         tmp_root = Path(tempfile.mkdtemp(prefix="statsbomb_app_"))
-        outdir = tmp_root / f"{slug(ctx.get('home_team') or 'home')}_{slug(ctx.get('away_team') or 'away')}_{int(match_id)}"
+        outdir = tmp_root / \
+            f"{slug(ctx.get('home_team') or 'home')}_{slug(ctx.get('away_team') or 'away')}_{int(match_id)}"
         outdir.mkdir(parents=True, exist_ok=True)
 
         # Save data
         saved = {}
-        saved.update({f"events_{k}": v for k,v in save_df(events, outdir, "events", save_csv=save_csv, save_parquet=save_parquet).items()})
-        saved.update({f"lineups_{k}": v for k,v in save_df(lineups, outdir, "lineups", save_csv=save_csv, save_parquet=save_parquet).items()})
+        saved.update({f"events_{k}": v for k, v in save_df(
+            events, outdir, "events", save_csv=save_csv, save_parquet=save_parquet).items()})
+        saved.update({f"lineups_{k}": v for k, v in save_df(
+            lineups, outdir, "lineups", save_csv=save_csv, save_parquet=save_parquet).items()})
         # Save matches row too (handy)
-        match_row = matches[matches[mid_col]==match_id].copy()
-        saved.update({f"match_{k}": v for k,v in save_df(match_row, outdir, "match", save_csv=save_csv, save_parquet=save_parquet).items()})
+        match_row = matches[matches[mid_col] == match_id].copy()
+        saved.update({f"match_{k}": v for k, v in save_df(
+            match_row, outdir, "match", save_csv=save_csv, save_parquet=save_parquet).items()})
 
         # Plots
-        ctx, teams, figs = generate_top5_streamlit(events, matches, match_id, save_figs=save_figs, outdir=outdir)
+        ctx, teams, figs = generate_top5_streamlit(
+            events, matches, match_id, save_figs=save_figs, outdir=outdir)
 
         report_paths = None
         if build_report and save_figs:
-            report_paths = build_match_report_from_saved_pngs(outdir, ctx={"competition_id": competition_id, "season_id": season_id, "match_id": match_id}, teams=teams)
+            report_paths = build_match_report_from_saved_pngs(outdir, ctx={
+                                                              "competition_id": competition_id, "season_id": season_id, "match_id": match_id}, teams=teams)
 
     st.success("Listo ✅")
 
@@ -1035,16 +1107,18 @@ def main():
 
     if report_paths:
         if report_paths.get("missing"):
-            st.warning("Faltaron algunos PNG para el match report: " + ", ".join(report_paths["missing"]))
-        for k in ["png","pdf"]:
+            st.warning("Faltaron algunos PNG para el match report: " +
+                       ", ".join(report_paths["missing"]))
+        for k in ["png", "pdf"]:
             p = report_paths.get(k)
             if p and Path(p).exists():
                 st.download_button(
                     label=f"⬇️ Descargar Match Report ({k.upper()})",
                     data=Path(p).read_bytes(),
                     file_name=Path(p).name,
-                    mime="application/pdf" if k=="pdf" else "image/png",
+                    mime="application/pdf" if k == "pdf" else "image/png",
                 )
+
 
 if __name__ == "__main__":
     main()
