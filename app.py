@@ -926,7 +926,7 @@ def zip_folder(folder: Path) -> bytes:
 
 
 def main():
-    st.title("StatsBomb Open Data — Match Report (Streamlit)")
+    st.title("StatsBomb Open Data — Match Report Generator")
 
     comps = get_competitions()
 
