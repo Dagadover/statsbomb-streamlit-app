@@ -1,6 +1,9 @@
-# AutoMatchReport 
+# MatchReport AI
 
 Automated football match reports web application built with Python and Streamlit, using StatsBomb Open Data.
+
+## Live App
+https://statsbomb-matchreport-app.streamlit.app/
 
 ## Overview
 
@@ -11,12 +14,12 @@ This project demonstrates how data analysis workflows can be transformed into en
 
 ## Features
 
-- Select football competition and match dynamically
-- Interactive data visualizations
-- Automatic generation of match reports
-- Export reports as PNG and PDF
-- Download all generated outputs as a ZIP file
-- Runs fully in the browser
+- Select football competition and match dynamically  
+- Interactive data visualizations  
+- Automatic generation of match reports  
+- Export reports as PNG and PDF  
+- Download all generated outputs as a ZIP file  
+- Runs fully in the browser  
 
 ## Tech Stack
 
@@ -32,8 +35,8 @@ This project demonstrates how data analysis workflows can be transformed into en
 Clone the repository and run the app locally:
 
 ```bash
-git clone https://github.com/your-username/matchreport-ai.git
-cd matchreport-ai
+git clone https://github.com/Dagadover/statsbomb-streamlit-app.git
+cd statsbomb-streamlit-app
 
 python -m venv .venv
 source .venv/bin/activate  # Mac/Linux
@@ -41,3 +44,19 @@ source .venv/bin/activate  # Mac/Linux
 
 pip install -r requirements.txt
 streamlit run app.py
+
+The app will be available at:
+http://localhost:8501
+
+Deployment
+
+The application is deployed using Streamlit Community Cloud and is publicly accessible via the link above.
+
+Data Source
+
+All data is retrieved from StatsBomb Open Data, provided for educational and research purposes.
+
+Author
+
+Daniel Aguiñaga
+Data Analyst / Data Scientist
