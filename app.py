@@ -20,6 +20,9 @@ from mplsoccer import Pitch
 import streamlit as st
 from statsbombpy import sb  # StatsBomb Open Data endpoints
 
+# ✅ ML (added)
+import joblib
+
 # ---------- App config ----------
 st.set_page_config(
     page_title="StatsBomb Open Data Match Report", layout="wide")
@@ -925,6 +928,121 @@ def zip_folder(folder: Path) -> bytes:
     return buf.getvalue()
 
 
+# =========================
+# ✅ ML helpers (added)
+# =========================
+@st.cache_resource(show_spinner=False)
+def load_ml_artifacts():
+    """
+    Loads:
+      - goal_diff_model.joblib
+      - goal_diff_feature_cols.json
+    from current working directory.
+    """
+    model = joblib.load("goal_diff_model.joblib")
+    with open("goal_diff_feature_cols.json", "r", encoding="utf-8") as f:
+        feature_cols = json.load(f)
+    return model, feature_cols
+
+
+def confidence_from_error(abs_error: float, scale: float = 4.0) -> float:
+    """
+    Confidence in [0,1].
+    Same idea you were using: 1 - min(|real - pred|/scale, 1)
+    """
+    if abs_error is None or not np.isfinite(abs_error):
+        return float("nan")
+    return float(1.0 - min(abs_error / scale, 1.0))
+
+
+def compute_ml_features(events_df: pd.DataFrame, ctx: dict) -> dict:
+    """
+    Option A features (shots/xG + progressive + pressures) for ONE match.
+    Returns dict with:
+      xg_diff, shots_diff, prog_passes_diff, prog_total_m_diff, press_mid_diff, press_fin_diff
+    """
+    GOAL_Y = 40.0
+
+    ev = prep_events_for_plots(events_df)
+    team_col = detect_team_col(ev)
+
+    home = str(ctx.get("home_team") or "")
+    away = str(ctx.get("away_team") or "")
+    if not home or not away:
+        raise ValueError("ctx missing home_team/away_team")
+
+    # --- Shots + xG ---
+    shots = ev[ev["type"] == "Shot"].copy()
+    xg_col = detect_xg_col(shots)
+
+    sh_h = shots[shots[team_col] == home].copy()
+    sh_a = shots[shots[team_col] == away].copy()
+
+    if xg_col:
+        xg_h = float(pd.to_numeric(
+            sh_h[xg_col], errors="coerce").fillna(0).sum())
+        xg_a = float(pd.to_numeric(
+            sh_a[xg_col], errors="coerce").fillna(0).sum())
+    else:
+        xg_h, xg_a = np.nan, np.nan
+
+    shots_diff = float(len(sh_h) - len(sh_a))
+    xg_diff = (xg_h - xg_a) if (np.isfinite(xg_h)
+                                and np.isfinite(xg_a)) else np.nan
+
+    # --- Progressive passes (open-play completed) ---
+    passes = ev[ev["type"] == "Pass"].copy()
+    passes = open_play_completed_passes(passes)
+    passes = passes.dropna(
+        subset=["x", "y", "pass_end_x", "pass_end_y"]).copy()
+
+    def prog_metrics(team: str):
+        p = passes[passes[team_col] == team].copy()
+        if p.empty:
+            return 0, 0.0
+        p = normalize_attack_right(p, team=team, ctx=ctx)
+
+        start_d = np.sqrt((PITCH_L - p["x"]) ** 2 + (GOAL_Y - p["y"]) ** 2)
+        end_d = np.sqrt((PITCH_L - p["pass_end_x"])
+                        ** 2 + (GOAL_Y - p["pass_end_y"]) ** 2)
+        progress = start_d - end_d
+        prog = progress[progress >= 10]
+        return int(len(prog)), float(prog.sum()) if len(prog) else 0.0
+
+    pp_h, ppm_h = prog_metrics(home)
+    pp_a, ppm_a = prog_metrics(away)
+
+    prog_passes_diff = float(pp_h - pp_a)
+    prog_total_m_diff = float(ppm_h - ppm_a)
+
+    # --- Pressures (mid/final third, normalized attack right) ---
+    press = ev[ev["type"] == "Pressure"].dropna(subset=["x"]).copy()
+
+    def press_counts(team: str):
+        pr = press[press[team_col] == team].copy()
+        if pr.empty:
+            return 0, 0
+        pr = normalize_attack_right(pr, team=team, ctx=ctx)
+        mid = ((pr["x"] >= 40) & (pr["x"] < 80)).sum()
+        fin = (pr["x"] >= 80).sum()
+        return int(mid), int(fin)
+
+    pm_h, pf_h = press_counts(home)
+    pm_a, pf_a = press_counts(away)
+
+    press_mid_diff = float(pm_h - pm_a)
+    press_fin_diff = float(pf_h - pf_a)
+
+    return {
+        "xg_diff": xg_diff,
+        "shots_diff": shots_diff,
+        "prog_passes_diff": prog_passes_diff,
+        "prog_total_m_diff": prog_total_m_diff,
+        "press_mid_diff": press_mid_diff,
+        "press_fin_diff": press_fin_diff,
+    }
+
+
 def main():
     st.title("StatsBomb Open Data — Match Report Generator")
 
@@ -1079,6 +1197,45 @@ def main():
     st.success("Listo ✅")
 
     st.markdown(f"### {fmt_ctx(ctx)}")
+
+    # ✅ ML block (added) — NO layout changes elsewhere
+    try:
+        model, feat_cols = load_ml_artifacts()
+
+        feats = compute_ml_features(events, ctx)
+        X_one = pd.DataFrame([{c: feats.get(c, np.nan) for c in feat_cols}])
+        pred_goal_diff = float(model.predict(X_one)[0])
+
+        hs = ctx.get("home_score")
+        a_s = ctx.get("away_score")
+        hs = float(hs) if hs is not None and str(hs) != "nan" else np.nan
+        a_s = float(a_s) if a_s is not None and str(a_s) != "nan" else np.nan
+        real_goal_diff = (
+            hs - a_s) if np.isfinite(hs) and np.isfinite(a_s) else np.nan
+
+        abs_err = abs(
+            real_goal_diff - pred_goal_diff) if np.isfinite(real_goal_diff) else np.nan
+        conf = confidence_from_error(abs_err, scale=4.0)
+
+        c1, c2, c3 = st.columns(3, gap="large")
+        with c1:
+            st.metric(
+                "Goal diff real", f"{real_goal_diff:+.0f}" if np.isfinite(real_goal_diff) else "—")
+        with c2:
+            st.metric("Goal diff predicho", f"{pred_goal_diff:+.2f}")
+        with c3:
+            st.metric("Confidence",
+                      f"{conf*100:.0f}%" if np.isfinite(conf) else "—")
+
+        with st.expander("Ver features usadas por el modelo"):
+            st.dataframe(pd.DataFrame([feats]), use_container_width=True)
+
+    except FileNotFoundError:
+        # Si no existen los artifacts, no rompemos la app.
+        st.info(
+            "ML: no encontré `goal_diff_model.joblib` y/o `goal_diff_feature_cols.json` en la carpeta actual.")
+    except Exception as e:
+        st.warning(f"ML: no se pudo calcular prediction/confidence: {e}")
 
     # Display plots
     st.markdown("## Gráficas")
