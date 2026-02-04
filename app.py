@@ -335,7 +335,6 @@ def plot_shot_map(events_xy: pd.DataFrame, ctx: dict, save=False, outdir: Option
     - Tamaño ~ xG
     - Estrella = gol
     - Disparos con/ sin gol diferenciados por marcador (círculo vs estrella)
-    - Orientación consistente: ambos equipos atacan hacia la derecha (visitante espejado)
     """
     team_col = detect_team_col(events_xy)
     shots = events_xy[events_xy["type"] == "Shot"].copy()
@@ -417,11 +416,6 @@ def plot_shot_map(events_xy: pd.DataFrame, ctx: dict, save=False, outdir: Option
 
     ax.set_title(
         f"Mapa de tiros (tamaño ~ xG, ★ = gol) — {fmt_ctx(ctx)}", pad=14)
-
-    # Pie de figura: recordatorio de orientación
-    ax.text(2, 78.5, "Orientación: ambos equipos atacan →",
-            ha="left", va="top", fontsize=9, alpha=0.75)
-
     fig.tight_layout()
     if save and outdir is not None:
         (Path(outdir) / "01_shot_map.png").parent.mkdir(parents=True, exist_ok=True)
